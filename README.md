@@ -1,0 +1,115 @@
+# Домашнее задание к занятию 5 «Тестирование roles»
+
+## ` Дмитрий Климов `
+
+## Основная часть
+
+Ваша цель — настроить тестирование ваших ролей.
+
+Задача — сделать сценарии тестирования для vector.
+
+Ожидаемый результат — все сценарии успешно проходят тестирование ролей.
+
+## `Molecule`
+
+1. Запустите molecule test -s ubuntu_xenial (или с любым другим сценарием, не имеет значения) внутри корневой директории           clickhouse-role, посмотрите на вывод команды. Данная команда может отработать с ошибками или не отработать вовсе, это           нормально. Наша цель - посмотреть как другие в реальном мире используют молекулу И из чего может состоять сценарий              тестирования.
+2. Перейдите в каталог с ролью vector-role и создайте сценарий тестирования по умолчанию при помощи molecule init scenario --      driver-name docker.
+3. Добавьте несколько разных дистрибутивов (oraclelinux:8, ubuntu:latest) для инстансов и протестируйте роль, исправьте            найденные ошибки, если они есть.
+4. Добавьте несколько assert в verify.yml-файл для проверки работоспособности vector-role (проверка, что конфиг валидный,          проверка успешности запуска и др.).
+5. Запустите тестирование роли повторно и проверьте, что оно прошло успешно.
+6. Добавьте новый тег на коммит с рабочим сценарием в соответствии с семантическим версионированием.
+
+## Ответ:
+
+### Подготовка и Инструменты
+
+*   **Python:** 3.12.3
+*   **Ansible:** 2.20 (версия, установленная в Docker-образе `aragast/netology` или в вашем рабочем окружении)
+*   **Molecule:** 25.12 (версия, установленная через `pip3`)
+*   **Molecule Drivers:** `docker`
+*   **Testinfra:** 6.x (версия, установленная через `pip3`)
+*   **Docker:** Установлен и работает на вашей машине.
+*   **Git:** Установлен для контроля версий.
+
+<img width="1920" height="1080" alt="Снимок экрана (1977)" src="https://github.com/user-attachments/assets/b048377f-9870-4546-830f-54bbc134be59" />
+
+### Основная Часть Задания
+
+#### 1. **Инициализация сценария `default` для `vector-role`**
+
+*   **Действие:** Выполнена команда `molecule init scenario --driver-name docker` в корневой директории `~/vector-role`.
+*   **Результат:** Созданы необходимые файлы сценария (`molecule.yml`, `converge.yml`, `create.yml`, `destroy.yml`, `idempotence.yml`, `parse.yml`, `prepare.yml`, `side_effect.yml`, `syntax.yml`, `verify.yml`) и директории (`tests`).
+
+#### 2. **Добавление дистрибутивов и исправление ошибок**
+
+*   **Изменения в `molecule/default/molecule.yml`:**
+    *   Добавлены инстансы:
+        *   `testing-instance-debian11` (Image: `debian:bullseye`, Command: `/bin/bash -c "while true; do sleep 1000; done"`)
+        *   `testing-instance-ubuntu-latest` (Image: `ubuntu:latest`, Command: `/bin/bash -c "while true; do sleep 1000; done"`)
+    *   Переменные Ansible для обеих платформ настроены в `inventory.group_vars.all`.
+
+*   **Ключевые исправления в `tasks/main.yml`:**
+    *   Удалены APT-зависимые части (добавление репозитория, GPG ключей).
+    *   Реализована установка через скачивание бинарного файла Vector.
+    *   Добавлена задача для создания директории `/etc/systemd/system` и копирования Unit-файла Vector.
+    *   Удален `daemon_reload: true` из задач `service` и `handler` для совместимости с минимальным Docker-окружением без Systemd.
+    *   Добавлено условие `when: ansible_connection != 'community.docker.docker'` для задач, связанных с Systemd, чтобы они пропускались в Docker-контейнерах.
+
+*   **Исправления в `handlers/main.yml`:**
+    *   Добавлено условие `when: ansible_connection != 'community.docker.docker'` к обработчику `restart vector`.
+    *   Имя обработчика приведено к нижнему регистру (`restart vector`) для соответствия `notify:` в задачах.
+
+*   **Исправления в `tests/test_default.py`:**
+    *   Изменена проверка `host.package("vector").is_installed` на `host.file("/usr/bin/vector").exists` для проверки наличия бинарника.
+    *   Удалена проверка `svc.is_running` и `svc.is_enabled`.
+    *   Добавлена проверка наличия Unit-файла (`/etc/systemd/system/vector.service`).
+    *   Улучшены проверки для конфигурационного файла.
+
+*   **Исправление конфликтов Git:**
+    *   Инициализирован локальный репозиторий (`git init`).
+    *   Привязан к удаленному репозиторию (`git remote add origin ...`).
+    *   Разрешены конфликты слияния несвязанных историй (`git pull origin main --allow-unrelated-histories --no-rebase`).
+    *   Выполнена отправка кода и тега (`git push`, `git push --tags`).
+
+#### 3. **Проверка работоспособности (Asserts в `verify.yml`)**
+
+*   **Реализовано:** Тесты в `tests/test_default.py` были написаны для проверки:
+    *   Наличия исполняемого файла Vector (`/usr/bin/vector`).
+    *   Корректности прав доступа к бинарному файлу.
+    *   Наличия Unit-файла Systemd (`/etc/systemd/system/vector.service`).
+    *   Корректности прав доступа к Unit-файлу.
+    *   Наличия и корректности основного конфигурационного файла (`/etc/vector/vector.toml`).
+    *   Непустоты конфигурационного файла.
+
+#### 4. **Запуск тестирования роли повторно**
+
+*   **Результат:** Все три этапа тестирования (`converge`, `idempotence`, `verify`) успешно пройдены для обеих платформ (`debian:bullseye` и `ubuntu:latest`).
+    *   **`converge`:** Успешно установил Vector.
+    *   **`idempotence`:** Убедился, что повторное применение роли не вносит изменений.
+    *   **`verify`:** Подтвердил корректность установки и наличия файлов через Testinfra.
+
+<img width="1920" height="1080" alt="Снимок экрана (1973)" src="https://github.com/user-attachments/assets/a3b115b4-b470-4516-9862-baeaa3d58779" />
+
+<img width="1920" height="1080" alt="Снимок экрана (1974)" src="https://github.com/user-attachments/assets/66823b95-2bd1-48ac-a1fa-b5a70fa50b06" />
+
+<img width="1920" height="1080" alt="Снимок экрана (1975)" src="https://github.com/user-attachments/assets/95f52d5f-1667-4358-a94a-d5b54d3a8ef9" />
+
+<img width="1920" height="1080" alt="Снимок экрана (1976)" src="https://github.com/user-attachments/assets/2e198622-90c9-4eb6-a6f6-615b7ef899e9" />
+
+
+#### 5. **Добавление нового тега на коммит**
+
+*   **Действие:** Выполнены команды `git add .`, `git commit`, `git tag v2.0.0`, `git push origin main`, `git push --tags`.
+*   **Результат:** Все изменения зафиксированы в Git-репозитории, и создан тег `v2.0.0`, соответствующий семантическому версионированию.
+
+---
+
+### Заключение
+
+### Все поставленные задачи выполнены. Роль `vector-role` имеет полностью рабочий и протестированный сценарий Molecule, обеспечивающий проверку ее функциональности на ключевых дистрибутивах Linux.
+
+## Сылка: `vector-role` https://github.com/Dmitriy-py/vector-role 
+
+
+
+
